@@ -60,7 +60,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: cd scan-target &&  npm ci
+      - run: cd scan-target &&  npm install
       - name: scan and log file
         run: cd scan-target && npm audit >> audit.txt
         continue-on-error: true
@@ -89,7 +89,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: cd scan-target &&  npm ci
+      - run: cd scan-target &&  pnpm install
       - name: install snyk
         run: npm install -g snyk
       - name: run synk  scan
