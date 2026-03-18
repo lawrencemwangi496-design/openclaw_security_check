@@ -337,7 +337,7 @@ jobs:
       - name: Checkout security-reports repo
         uses: actions/checkout@v4
         with:
-          repository: yourusername/security-reports
+          repository: lawrencemwangi496-design/security-reports
           token: ${{ secrets.GH_PAT }}
           path: security-reports
 
