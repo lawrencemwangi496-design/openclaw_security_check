@@ -246,6 +246,9 @@ jobs:
             }")
 
           echo "Raw response: $RESPONSE"
+          echo "---"
+          echo "Parsed text attempt:"
+          echo $RESPONSE | jq -r '.choices[0].message.content'
 
           TEXT=$(echo $RESPONSE | jq -r '.choices[0].message.content' 2>/dev/null || echo $RESPONSE | jq -r '.candidates[0].content.parts[0].text')
           CLEAN=$(echo "$TEXT" | sed 's/```json//g' | sed 's/```//g' | tr -d '\n' | xargs)
