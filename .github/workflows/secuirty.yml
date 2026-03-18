@@ -21,7 +21,6 @@ on:
           - tirvy_scan
           - secret_scan
           - image_scan
-          - filesystem_scan
           - all
 
 jobs:
@@ -189,3 +188,198 @@ jobs:
         with:
           name: image-scan-logs
           path: image-scan.txt
+    
+
+  analyze:
+    runs-on: ubuntu-latest
+    needs: [npm_audit, synk_scan, trivy_scan, secret_scan, image_scan]
+    outputs:
+      verdict: ${{ steps.analyze.outputs.verdict }}
+      reason: ${{ steps.analyze.outputs.reason }}
+    steps:
+      - name: Download npm audit log
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-audit-logs
+
+      - name: Download snyk log
+        uses: actions/download-artifact@v4
+        with:
+          name: synk-logs
+
+      - name: Download trivy log
+        uses: actions/download-artifact@v4
+        with:
+          name: trivy-logs
+
+      - name: Download secrets log
+        uses: actions/download-artifact@v4
+        with:
+          name: secret-scan-logs
+
+      - name: Download image scan log
+        uses: actions/download-artifact@v4
+        with:
+          name: image-scan-logs
+
+      - name: Analyze with Gemini
+        id: analyze
+        run: |
+          AUDIT=$(cat audit.txt 2>/dev/null || echo "no output")
+          SNYK=$(cat snyk.txt 2>/dev/null || echo "no output")
+          TRIVY=$(cat trivy.txt 2>/dev/null || echo "no output")
+          SECRETS=$(cat secrets.txt 2>/dev/null || echo "no output")
+          IMAGES=$(cat image-scan.txt 2>/dev/null || echo "no output")
+
+          PROMPT="You are a security analyst. Analyze these scan results and respond with ONLY a JSON object in this exact format: {\"verdict\": \"PASS\" or \"WARN\" or \"FAIL\", \"summary\": \"2-3 sentence overview of the overall security posture\", \"critical_findings\": [{\"tool\": \"which scanner found it\", \"package\": \"affected package name and version\", \"severity\": \"HIGH or CRITICAL\", \"issue\": \"what the vulnerability is and why it is dangerous\", \"fix\": \"exact command or steps to fix it or none available\"}], \"warnings\": [\"list of medium severity findings worth watching\"], \"recommendation\": \"detailed paragraph — what should happen next, should this code be deployed or blocked and exactly why\"} Rules: FAIL if HIGH or CRITICAL vulnerability exists with an available fix. WARN if HIGH exists but no fix available. PASS if clean or only low severity. NPM AUDIT: $AUDIT SNYK: $SNYK TRIVY: $TRIVY SECRETS: $SECRETS IMAGE SCAN: $IMAGES"
+
+          RESPONSE=$(curl -s \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
+            -H "content-type: application/json" \
+            -d "{
+              \"contents\": [{
+                \"parts\": [{
+                  \"text\": $(echo "$PROMPT" | jq -Rs .)
+                }]
+              }]
+            }")
+
+          echo "Raw response: $RESPONSE"
+
+          TEXT=$(echo $RESPONSE | jq -r '.candidates[0].content.parts[0].text')
+          CLEAN=$(echo "$TEXT" | sed 's/```json//g' | sed 's/```//g' | tr -d '\n' | xargs)
+
+          VERDICT=$(echo "$CLEAN" | jq -r '.verdict')
+          SUMMARY=$(echo "$CLEAN" | jq -r '.summary')
+          RECOMMENDATION=$(echo "$CLEAN" | jq -r '.recommendation')
+          FINDINGS=$(echo "$CLEAN" | jq -r '.critical_findings[] | "- [\(.severity)] \(.package) via \(.tool)\n  Issue: \(.issue)\n  Fix: \(.fix)"')
+          WARNINGS=$(echo "$CLEAN" | jq -r '.warnings[] | "- \(.)"')
+
+          echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
+          echo "reason=$SUMMARY" >> $GITHUB_OUTPUT
+
+          # verdict file — gate job reads this
+          echo "$VERDICT" > gemini-verdict.txt
+
+          # report file — humans read this
+          cat > gemini-report.md << EOF
+          # OpenClaw Security Report — $(date +%Y-%m-%d)
+
+          ## Verdict: $VERDICT
+
+          ## Summary
+          $SUMMARY
+
+          ## Critical Findings
+          $FINDINGS
+
+          ## Warnings
+          $WARNINGS
+
+          ## Recommendation
+          $RECOMMENDATION
+          EOF
+
+          echo "Report preview:"
+          cat gemini-report.md
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Upload verdict
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gemini-verdict
+          path: gemini-verdict.txt
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gemini-report
+          path: gemini-report.md
+  report:
+    runs-on: ubuntu-latest
+    needs: analyze
+    if: always()
+    steps:
+      - name: Download report
+        uses: actions/download-artifact@v4
+        with:
+          name: gemini-report
+
+      - name: Download verdict
+        uses: actions/download-artifact@v4
+        with:
+          name: gemini-verdict
+
+      - name: Send Telegram message
+        run: |
+          VERDICT=$(cat gemini-verdict.txt)
+          REPORT=$(cat gemini-report.md)
+
+          if [ "$VERDICT" == "PASS" ]; then
+            EMOJI="✅"
+          elif [ "$VERDICT" == "WARN" ]; then
+            EMOJI="⚠️"
+          else
+            EMOJI="❌"
+          fi
+
+          MESSAGE="$EMOJI OpenClaw Security Scan — $(date +%Y-%m-%d)
+          Verdict: $VERDICT
+
+          $(cat gemini-report.md | head -50)"
+
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -H "content-type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.CHAT_ID }}\",
+              \"text\": $(echo "$MESSAGE" | jq -Rs .),
+              \"parse_mode\": \"Markdown\"
+            }"
+
+      - name: Checkout security-reports repo
+        uses: actions/checkout@v4
+        with:
+          repository: yourusername/security-reports
+          token: ${{ secrets.GH_PAT }}
+          path: security-reports
+
+      - name: Commit report to security-reports
+        run: |
+          cp gemini-report.md security-reports/reports/$(date +%Y-%m-%d).md
+          cd security-reports
+          git config user.name "security-bot"
+          git config user.email "security-bot@users.noreply.github.com"
+          git add .
+          git commit -m "security report $(date +%Y-%m-%d) — $(cat ../gemini-verdict.txt)"
+          git push
+
+      - name: Create GitHub Issue
+        run: |
+          VERDICT=$(cat gemini-verdict.txt)
+          REPORT=$(cat gemini-report.md)
+
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GH_PAT }}" \
+            -H "content-type: application/json" \
+            https://api.github.com/repos/lawrencemwangi496-design/security-reports/issues \
+            -d "{
+              \"title\": \"Security Scan $(date +%Y-%m-%d) — $VERDICT\",
+              \"body\": $(echo "$REPORT" | jq -Rs .)
+            }"
+
+      - name: Open PR on Gitea if verdict is PASS
+        if: needs.analyze.outputs.verdict == 'PASS'
+        run: |
+          curl -s -X POST \
+            "https://gitea.devsecorpion.sbs/api/v1/repos/obrienewalter/openclaw/pulls" \
+            -H "Authorization: token ${{ secrets.GITEA_TOKEN }}" \
+            -H "content-type: application/json" \
+            -d "{
+              \"title\": \"upstream update $(date +%Y-%m-%d) — scan passed\",
+              \"body\": $(cat gemini-report.md | jq -Rs .),
+              \"head\": \"main\",
+              \"base\": \"main\"
+            }"
