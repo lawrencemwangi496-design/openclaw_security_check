@@ -225,62 +225,21 @@ jobs:
       - name: Analyze with AI
         id: analyze
         run: |
-          AUDIT=$(cat audit.txt 2>/dev/null || echo "no output")
-          SNYK=$(cat snyk.txt 2>/dev/null || echo "no output")
-          TRIVY=$(cat trivy.txt 2>/dev/null || echo "no output")
-          SECRETS=$(cat secrets.txt 2>/dev/null || echo "no output")
-          IMAGES=$(cat image-scan.txt 2>/dev/null || echo "no output")
-
-          PROMPT="You are a security analyst. Analyze these scan results and respond with ONLY a JSON object in this exact format: {\"verdict\": \"PASS\" or \"WARN\" or \"FAIL\", \"summary\": \"2-3 sentence overview of the overall security posture\", \"critical_findings\": [{\"tool\": \"which scanner found it\", \"package\": \"affected package name and version\", \"severity\": \"HIGH or CRITICAL\", \"issue\": \"what the vulnerability is and why it is dangerous\", \"fix\": \"exact command or steps to fix it or none available\"}], \"warnings\": [\"list of medium severity findings worth watching\"], \"recommendation\": \"detailed paragraph — what should happen next, should this code be deployed or blocked and exactly why\"} Rules: FAIL if HIGH or CRITICAL vulnerability exists with an available fix. WARN if HIGH exists but no fix available. PASS if clean or only low severity. NPM AUDIT: $AUDIT SNYK: $SNYK TRIVY: $TRIVY SECRETS: $SECRETS IMAGE SCAN: $IMAGES"
-
-          RESPONSE=$(curl -s "${{ secrets.AI_API_URL }}" \
-            -H "Authorization: Bearer ${{ secrets.AI_API_KEY }}" \
-            -H "content-type: application/json" \
-            -d "{
-              \"model\": \"${{ secrets.AI_MODEL }}\",
-              \"messages\": [{
-                \"role\": \"user\",
-                \"content\": $(echo "$PROMPT" | jq -Rs .)
-              }],
-              \"max_tokens\": 2000
-            }")
-
-          echo "Raw response: $RESPONSE"
-          echo "---"
-          echo "Parsed text attempt:"
-          echo $RESPONSE | jq -r '.choices[0].message.content'
-
-          TEXT=$(echo $RESPONSE | jq -r '.choices[0].message.content' 2>/dev/null || echo $RESPONSE | jq -r '.candidates[0].content.parts[0].text')
-          CLEAN=$(echo "$TEXT" | sed 's/```json//g' | sed 's/```//g' | tr -d '\n' | xargs)
-
-          VERDICT=$(echo "$CLEAN" | jq -r '.verdict')
-          SUMMARY=$(echo "$CLEAN" | jq -r '.summary')
-          RECOMMENDATION=$(echo "$CLEAN" | jq -r '.recommendation')
-          FINDINGS=$(echo "$CLEAN" | jq -r '.critical_findings[] | "- [\(.severity)] \(.package) via \(.tool)\n  Issue: \(.issue)\n  Fix: \(.fix)"')
-          WARNINGS=$(echo "$CLEAN" | jq -r '.warnings[] | "- \(.)"')
-
-          echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
-          echo "reason=$SUMMARY" >> $GITHUB_OUTPUT
-
-          echo "$VERDICT" > gemini-verdict.txt
-
-          cat > gemini-report.md << EOF
-          # OpenClaw Security Report — $(date +%Y-%m-%d)
-
-          ## Verdict: $VERDICT
-
-          ## Summary
-          $SUMMARY
-
-          ## Critical Findings
-          $FINDINGS
-
-          ## Warnings
-          $WARNINGS
-
-          ## Recommendation
-          $RECOMMENDATION
-          EOF
+           set -x
+           AUDIT=$(cat audit.txt 2>/dev/null || echo "no output")
+           SNYK=$(cat snyk.txt 2>/dev/null || echo "no output")
+           TRIVY=$(cat trivy.txt 2>/dev/null || echo "no output")
+           SECRETS=$(cat secrets.txt 2>/dev/null || echo "no output")
+           IMAGES=$(cat image-scan.txt 2>/dev/null || echo "no output")
+           echo "files read"
+           echo "AUDIT length: ${#AUDIT}"
+           PROMPT="test prompt"
+           echo "prompt set"
+           RESPONSE=$(curl -s "${{ secrets.AI_API_URL }}" \
+             -H "Authorization: Bearer ${{ secrets.AI_API_KEY }}" \
+             -H "content-type: application/json" \
+             -d "{\"model\": \"${{ secrets.AI_MODEL }}\", \"messages\": [{\"role\": \"user\", \"content\": \"test\"}], \"max_tokens\": 100}")
+           echo "Raw response: $RESPONSE"
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
 
