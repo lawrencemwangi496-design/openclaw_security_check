@@ -248,7 +248,7 @@ jobs:
           echo "Raw response: $RESPONSE"
 
           TEXT=$(echo $RESPONSE | jq -r '.choices[0].message.content')
-          CLEAN=$(echo "$TEXT" | sed 's/```json//g' | sed 's/```//g' | tr -d '\n' | xargs)
+          CLEAN=$(echo "$TEXT" | sed 's/```json//g' | sed 's/```//g' )
 
           VERDICT=$(echo "$CLEAN" | jq -r '.verdict')
           SUMMARY=$(echo "$CLEAN" | jq -r '.summary')
