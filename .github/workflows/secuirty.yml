@@ -222,7 +222,7 @@ jobs:
         with:
           name: image-scan-logs
 
-      - name: Analyze with Gemini
+      - name: Analyze with AI
         id: analyze
         run: |
           AUDIT=$(cat audit.txt 2>/dev/null || echo "no output")
@@ -233,20 +233,21 @@ jobs:
 
           PROMPT="You are a security analyst. Analyze these scan results and respond with ONLY a JSON object in this exact format: {\"verdict\": \"PASS\" or \"WARN\" or \"FAIL\", \"summary\": \"2-3 sentence overview of the overall security posture\", \"critical_findings\": [{\"tool\": \"which scanner found it\", \"package\": \"affected package name and version\", \"severity\": \"HIGH or CRITICAL\", \"issue\": \"what the vulnerability is and why it is dangerous\", \"fix\": \"exact command or steps to fix it or none available\"}], \"warnings\": [\"list of medium severity findings worth watching\"], \"recommendation\": \"detailed paragraph — what should happen next, should this code be deployed or blocked and exactly why\"} Rules: FAIL if HIGH or CRITICAL vulnerability exists with an available fix. WARN if HIGH exists but no fix available. PASS if clean or only low severity. NPM AUDIT: $AUDIT SNYK: $SNYK TRIVY: $TRIVY SECRETS: $SECRETS IMAGE SCAN: $IMAGES"
 
-          RESPONSE=$(curl -s \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
+          RESPONSE=$(curl -s "${{ secrets.AI_API_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.AI_API_KEY }}" \
             -H "content-type: application/json" \
             -d "{
-              \"contents\": [{
-                \"parts\": [{
-                  \"text\": $(echo "$PROMPT" | jq -Rs .)
-                }]
-              }]
+              \"model\": \"${{ secrets.AI_MODEL }}\",
+              \"messages\": [{
+                \"role\": \"user\",
+                \"content\": $(echo "$PROMPT" | jq -Rs .)
+              }],
+              \"max_tokens\": 2000
             }")
 
           echo "Raw response: $RESPONSE"
 
-          TEXT=$(echo $RESPONSE | jq -r '.candidates[0].content.parts[0].text')
+          TEXT=$(echo $RESPONSE | jq -r '.choices[0].message.content' 2>/dev/null || echo $RESPONSE | jq -r '.candidates[0].content.parts[0].text')
           CLEAN=$(echo "$TEXT" | sed 's/```json//g' | sed 's/```//g' | tr -d '\n' | xargs)
 
           VERDICT=$(echo "$CLEAN" | jq -r '.verdict')
@@ -258,10 +259,8 @@ jobs:
           echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
           echo "reason=$SUMMARY" >> $GITHUB_OUTPUT
 
-          # verdict file — gate job reads this
           echo "$VERDICT" > gemini-verdict.txt
 
-          # report file — humans read this
           cat > gemini-report.md << EOF
           # OpenClaw Security Report — $(date +%Y-%m-%d)
 
@@ -279,11 +278,8 @@ jobs:
           ## Recommendation
           $RECOMMENDATION
           EOF
-
-          echo "Report preview:"
-          cat gemini-report.md
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
 
       - name: Upload verdict
         uses: actions/upload-artifact@v4
