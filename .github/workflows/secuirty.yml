@@ -1,5 +1,22 @@
 ---
-name: security
+# OpenClaw Security Monitoring Pipeline
+# 
+# Purpose: Automatically scan the OpenClaw open-source project for vulnerabilities
+# and create deployment PRs when issues are found.
+#
+# This workflow implements a complete DevSecOps feedback loop:
+# 1. Pull latest source code
+# 2. Run comprehensive security scans (npm audit, Snyk, Trivy, secret detection)
+# 3. Send Telegram alerts for critical findings
+# 4. Create pull request to self-hosted Gitea for deployment
+#
+# Triggers:
+# - Daily at 3am UTC (automated monitoring)
+# - Push to main (immediate scan after upstream changes)
+# - Pull requests (scan before merging)
+# - Manual dispatch with granular scan selection
+
+name: OpenClaw Security Scan
 on:
   push:
     branches: [main]
