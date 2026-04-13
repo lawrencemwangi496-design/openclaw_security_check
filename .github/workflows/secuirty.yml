@@ -218,26 +218,32 @@ jobs:
     steps:
       - name: Download npm audit log
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: npm-audit-logs
+        
 
       - name: Download snyk log
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: synk-logs
 
       - name: Download trivy log
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: trivy-logs
 
       - name: Download secrets log
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: secret-scan-logs
 
       - name: Download image scan log
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: image-scan-logs
 
