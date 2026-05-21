@@ -258,7 +258,7 @@ jobs:
 
           PROMPT="You are a security analyst. Analyze these scan results and respond with ONLY a JSON object in this exact format: {\"verdict\": \"PASS\" or \"WARN\" or \"FAIL\", \"summary\": \"2-3 sentence overview of the overall security posture\", \"critical_findings\": [{\"tool\": \"which scanner found it\", \"package\": \"affected package name and version\", \"severity\": \"HIGH or CRITICAL\", \"issue\": \"what the vulnerability is and why it is dangerous\", \"fix\": \"exact command or steps to fix it or none available\"}], \"warnings\": [\"list of medium severity findings worth watching\"], \"recommendation\": \"detailed paragraph on what should happen next, should this code be deployed or blocked and exactly why\"} Rules: FAIL if HIGH or CRITICAL vulnerability exists with an available fix. WARN if HIGH exists but no fix available. PASS if clean or only low severity. NPM AUDIT: $AUDIT SNYK: $SNYK TRIVY: $TRIVY SECRETS: $SECRETS IMAGE SCAN: $IMAGES"
 
-          RESPONSE=$(curl -s "${{ secrets.AI_API_URL }}" \
+          RESPONSE=$(curl -s "${{ secrets.AI_API_URL }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.AI_API_KEY }}" \
             -H "content-type: application/json" \
             -d "{
